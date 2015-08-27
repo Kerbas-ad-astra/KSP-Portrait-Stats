@@ -26,6 +26,7 @@ THE SOFTWARE.
 
 using System.Collections.Generic;
 using System.Reflection;
+using System.Linq;
 using UnityEngine;
 
 namespace PortraitStats
@@ -41,6 +42,8 @@ namespace PortraitStats
 		private int index;
 		private Vector2 screenPos = new Vector2();
 		private KerbalGUIManager manager;
+		private float timer;
+
 		private static Texture2D atlas;
 
 		private Rect tooltipPosition;
@@ -58,6 +61,7 @@ namespace PortraitStats
 		{
 			GameEvents.onVesselWasModified.Add(vesselCheck);
 			GameEvents.onVesselChange.Add(vesselCheck);
+			GameEvents.OnMapExited.Add(mapTimer);
 
 			manager = findKerbalGUIManager();
 
@@ -95,6 +99,7 @@ namespace PortraitStats
 		{
 			GameEvents.onVesselWasModified.Remove(vesselCheck);
 			GameEvents.onVesselChange.Remove(vesselCheck);
+			GameEvents.OnMapExited.Remove(mapTimer);
 
 			RenderingManager.RemoveFromPostDrawQueue(5, drawLabels);
 		}
@@ -115,6 +120,20 @@ namespace PortraitStats
 
 			if (reload)
 			{
+				List<string> crewtodelete = new List<string>();
+
+				foreach (KeyValuePair<string, KerbalTrait> crew in currentCrew)
+				{
+					Kerbal fndkerbal = KerbalGUIManager.ActiveCrew.Where(x => x.name == crew.Key).FirstOrDefault();
+
+					if (fndkerbal != null)
+						continue;
+
+					crewtodelete.Add(crew.Key);
+				}
+
+				crewtodelete.ForEach(id => currentCrew.Remove(id));
+
 				foreach (Kerbal k in KerbalGUIManager.ActiveCrew)
 				{
 					if (currentCrew.ContainsKey(k.name))
@@ -123,9 +142,7 @@ namespace PortraitStats
 					currentCrew.Add(k.name, new KerbalTrait(k));
 				}
 
-				float button = KerbalGUIManager.ActiveCrew.Count > 3 ? 28 : 0;
-
-				screenPos.x = Screen.width - manager.AvatarSpacing - manager.AvatarSize - button;
+				screenPos.x = Screen.width - manager.AvatarSpacing - manager.AvatarSize - (KerbalGUIManager.ActiveCrew.Count > 3 ? 28 : 0);
 				screenPos.y = Screen.height - manager.AvatarSpacing - manager.AvatarTextSize - 26;
 
 				index = int.MaxValue;
@@ -155,9 +172,13 @@ namespace PortraitStats
 
 		private void drawLabels()
 		{
-			int crewCount = KerbalGUIManager.ActiveCrew.Count;
+			if (timer >= 0)
+			{
+				timer -= Time.deltaTime;
+				return;
+			}
 
-			if (crewCount <= 0)
+			if (FlightGlobals.ActiveVessel.isEVA)
 				return;
 
 			switch (CameraManager.Instance.currentCameraMode)
@@ -167,6 +188,11 @@ namespace PortraitStats
 				case CameraManager.CameraMode.IVA:
 					return;
 			}
+
+			int crewCount = KerbalGUIManager.ActiveCrew.Count;
+
+			if (crewCount <= 0)
+				return;
 
 			Color old = GUI.color;
 			bool drawTooltip = false;
@@ -265,6 +291,11 @@ namespace PortraitStats
 			reload = true;
 		}
 
+		private void mapTimer()
+		{
+			timer = 1.4f;
+		}
+
 		private KerbalGUIManager findKerbalGUIManager()
 		{
 			FieldInfo[] fields = typeof(KerbalGUIManager).GetFields(BindingFlags.NonPublic | BindingFlags.Static);
@@ -321,7 +352,7 @@ namespace PortraitStats
 				{
 					text = "<b>" + pcm.name + "</b>";
 					if (careerMode)
-						text += "\n<b>Experience:</b> " + pcm.experience.ToString("F0") + "/" + KerbalRoster.GetExperienceLevelRequirement(pcm.experienceLevel);
+						text += "\n<b>Experience:</b> " + pcm.experience.ToString("F2") + "/" + KerbalRoster.GetExperienceLevelRequirement(pcm.experienceLevel);
 					string log = KerbalRoster.GenerateExperienceLog(pcm.careerLog);
 					if (!string.IsNullOrEmpty(log))
 					{
